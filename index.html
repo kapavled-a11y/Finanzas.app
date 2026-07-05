@@ -369,7 +369,7 @@
 <div class="modal-overlay" id="modal-movimiento">
   <div class="modal">
     <button class="close-x" onclick="cerrarModal('modal-movimiento')">✕</button>
-    <h3>Nuevo movimiento</h3>
+    <h3 id="modal-movimiento-titulo">Nuevo movimiento</h3>
 
     <div id="mov-sin-cuentas" style="display:none;">
       <div class="status-msg error">Primero necesitas crear al menos una cuenta.</div>
@@ -407,7 +407,7 @@
       <label>Descripción (opcional)</label>
       <input type="text" id="mov-descripcion" placeholder="Ej. Supermercado">
       <div id="mov-status"></div>
-      <button class="btn" onclick="guardarMovimiento()">Guardar</button>
+      <button class="btn" id="btn-guardar-movimiento" onclick="guardarMovimiento()">Guardar</button>
     </div>
   </div>
 </div>
@@ -532,6 +532,7 @@ let state = { movimientos: [], presupuestos: [], cuentas: [], planesPago: [], pa
 let tipoActual = 'Gasto';
 let tipoPlanActual = 'Recurrente';
 let editingCuentaId = null;
+let editingMovimientoId = null;
 let chartPie = null, chartBar = null, chartFlujo = null, chartPerfil = null;
 
 let filtroPeriodoDash = 'Mes';
@@ -595,18 +596,42 @@ function convertirAMonedaBase(monto, monedaOrigen){
 
 /* ---------- Modales ---------- */
 
-function abrirModalMovimiento(){
-  document.getElementById('mov-fecha').value = new Date().toISOString().slice(0,10);
+function abrirModalMovimiento(id){
+  editingMovimientoId = id || null;
   document.getElementById('mov-status').innerHTML = '';
   poblarSelectsCuenta();
+
   if(state.cuentas.length === 0){
     document.getElementById('mov-sin-cuentas').style.display = 'block';
     document.getElementById('mov-form-wrap').style.display = 'none';
-  } else {
-    document.getElementById('mov-sin-cuentas').style.display = 'none';
-    document.getElementById('mov-form-wrap').style.display = 'block';
+    abrirModal('modal-movimiento');
+    return;
   }
-  setTipo('Gasto');
+  document.getElementById('mov-sin-cuentas').style.display = 'none';
+  document.getElementById('mov-form-wrap').style.display = 'block';
+
+  if(editingMovimientoId){
+    const m = state.movimientos.find(mv => mv.id === editingMovimientoId);
+    if(!m) return;
+    document.getElementById('modal-movimiento-titulo').textContent = 'Editar movimiento';
+    document.getElementById('btn-guardar-movimiento').textContent = 'Guardar cambios';
+    setTipo(m.tipo);
+    document.getElementById('mov-monto').value = m.monto;
+    document.getElementById('mov-cuenta').value = m.cuentaid;
+    if(m.cuentadestinoid) document.getElementById('mov-cuenta-destino').value = m.cuentadestinoid;
+    document.getElementById('mov-categoria').value = (m.tipo === 'Gasto' || m.tipo === 'Ingreso') ? m.categoria : '';
+    document.getElementById('mov-fecha').value = m.fecha;
+    document.getElementById('mov-descripcion').value = m.descripcion || '';
+  } else {
+    document.getElementById('modal-movimiento-titulo').textContent = 'Nuevo movimiento';
+    document.getElementById('btn-guardar-movimiento').textContent = 'Guardar';
+    setTipo('Gasto');
+    document.getElementById('mov-monto').value = '';
+    document.getElementById('mov-categoria').value = '';
+    document.getElementById('mov-descripcion').value = '';
+    document.getElementById('mov-fecha').value = new Date().toISOString().slice(0,10);
+  }
+
   actualizarDatalistCategorias();
   actualizarSimboloMontoMov();
   abrirModal('modal-movimiento');
@@ -866,20 +891,28 @@ async function guardarMovimiento(){
   if(tipoActual === 'Transferencia') categoriaFinal = 'Transferencia';
   if(tipoActual === 'PagoTarjeta') categoriaFinal = 'Pago de tarjeta de crédito';
 
+  const payload = {
+    tipo: tipoActual,
+    categoria: categoriaFinal,
+    monto, fecha, descripcion,
+    cuentaId,
+    cuentaDestinoId: requiereDestino ? cuentaDestinoId : ''
+  };
+
   statusEl.innerHTML = '<div class="status-msg">Guardando...</div>';
   try{
-    await llamarBackend('addMovimiento', {
-      tipo: tipoActual,
-      categoria: categoriaFinal,
-      monto, fecha, descripcion,
-      cuentaId,
-      cuentaDestinoId: requiereDestino ? cuentaDestinoId : '',
-      perfil: miPerfil()
-    });
+    if(editingMovimientoId){
+      payload.id = editingMovimientoId;
+      await llamarBackend('editMovimiento', payload);
+    } else {
+      payload.perfil = miPerfil();
+      await llamarBackend('addMovimiento', payload);
+    }
     await cargarDatos();
     document.getElementById('mov-monto').value = '';
     document.getElementById('mov-categoria').value = '';
     document.getElementById('mov-descripcion').value = '';
+    editingMovimientoId = null;
     cerrarModal('modal-movimiento');
   } catch(err){
     statusEl.innerHTML = '<div class="status-msg error">Error: ' + err.message + '</div>';
@@ -1161,6 +1194,7 @@ function renderMovimientos(){
       </div>
       <div style="display:flex;align-items:center;gap:6px;">
         <span class="amt ${claseMonto}">${signo}${fmt(m.monto, monedaCuenta(m.cuentaid))}</span>
+        <button class="del" onclick="abrirModalMovimiento('${m.id}')">✏️</button>
         <button class="del" onclick="eliminarMovimiento('${m.id}')">🗑</button>
       </div>
     </div>
