@@ -43,6 +43,9 @@
     color:#fff;
     padding:calc(22px + env(safe-area-inset-top)) 20px 26px;
     border-radius:0 0 20px 20px;
+    position:sticky;
+    top:0;
+    z-index:5;
   }
   header h1{margin:0 0 4px;font-size:18px;font-weight:600;opacity:.9;}
   header .balance{font-size:32px;font-weight:700;}
@@ -63,6 +66,7 @@
   .row .amt.gasto{color:var(--danger);font-weight:700;}
   .row .amt.ingreso{color:var(--accent-dark);font-weight:700;}
   .row .amt.transferencia{color:var(--info);font-weight:700;}
+  .row .amt.pagotarjeta{color:#8e5cf5;font-weight:700;}
   .del{background:none;border:none;color:var(--muted);font-size:16px;cursor:pointer;padding:4px 8px;}
   select,input,button{font-family:inherit;font-size:15px;}
   input,select{
@@ -95,6 +99,7 @@
   .toggle-group button.active.gasto{background:#fdeceb;color:var(--danger);border-color:var(--danger);}
   .toggle-group button.active.ingreso{background:#e7f6f2;color:var(--accent-dark);border-color:var(--accent);}
   .toggle-group button.active.transferencia{background:#eaf0ff;color:var(--info);border-color:var(--info);}
+  .toggle-group button.active.pagotarjeta{background:#f2ecfd;color:#8e5cf5;border-color:#8e5cf5;}
   .toggle-group button.active.plan{background:#fdf3e5;color:var(--warn);border-color:var(--warn);}
   nav#bottom-nav{
     position:fixed;bottom:0;left:50%;transform:translateX(-50%);
@@ -216,6 +221,11 @@
         <h2 id="titulo-pie">Gastos por categoría</h2>
         <canvas id="chart-pie" height="220"></canvas>
         <div class="empty" id="pie-empty" style="display:none;">No hay gastos en este periodo.</div>
+      </div>
+      <div class="card">
+        <h2 id="titulo-perfil">Ingresos y gastos por perfil</h2>
+        <canvas id="chart-perfil" height="220"></canvas>
+        <div class="empty" id="perfil-empty" style="display:none;">No hay movimientos con perfil en este periodo.</div>
       </div>
       <div class="card">
         <h2>Flujo de efectivo</h2>
@@ -371,6 +381,7 @@
         <button type="button" id="btn-tipo-gasto" class="active gasto" onclick="setTipo('Gasto')">Gasto</button>
         <button type="button" id="btn-tipo-ingreso" class="ingreso" onclick="setTipo('Ingreso')">Ingreso</button>
         <button type="button" id="btn-tipo-transferencia" class="transferencia" onclick="setTipo('Transferencia')">Transferir</button>
+        <button type="button" id="btn-tipo-pagotarjeta" class="pagotarjeta" onclick="setTipo('PagoTarjeta')">Pago tarjeta</button>
       </div>
       <label id="label-monto-mov">Monto</label>
       <input type="number" id="mov-monto" placeholder="0.00" step="0.01">
@@ -379,9 +390,10 @@
       <select id="mov-cuenta" onchange="actualizarSimboloMontoMov()"></select>
 
       <div id="grupo-cuenta-destino" style="display:none;">
-        <label>Cuenta destino</label>
-        <select id="mov-cuenta-destino"></select>
+        <label id="label-cuenta-destino">Cuenta destino</label>
+        <select id="mov-cuenta-destino" onchange="actualizarAvisoCambioMoneda()"></select>
         <div id="aviso-cambio-moneda" style="display:none;" class="status-msg">Estas cuentas usan monedas distintas: se convertirá con tu tasa de cambio configurada.</div>
+        <div id="aviso-sin-tarjetas" style="display:none;" class="status-msg error">No tienes ninguna cuenta de tipo "Tarjeta de crédito" todavía.</div>
       </div>
 
       <div id="grupo-categoria">
@@ -520,7 +532,7 @@ let state = { movimientos: [], presupuestos: [], cuentas: [], planesPago: [], pa
 let tipoActual = 'Gasto';
 let tipoPlanActual = 'Recurrente';
 let editingCuentaId = null;
-let chartPie = null, chartBar = null, chartFlujo = null;
+let chartPie = null, chartBar = null, chartFlujo = null, chartPerfil = null;
 
 let filtroPeriodoDash = 'Mes';
 let filtroCuentaDash = 'todas';
@@ -663,7 +675,18 @@ function abrirModalPlan(){
 function poblarSelectsCuenta(){
   const opciones = state.cuentas.map(c => `<option value="${c.id}">${c.nombre} (${c.moneda||'CRC'})</option>`).join('');
   document.getElementById('mov-cuenta').innerHTML = opciones;
-  document.getElementById('mov-cuenta-destino').innerHTML = opciones;
+  actualizarOpcionesDestino();
+}
+
+function actualizarOpcionesDestino(){
+  const destino = document.getElementById('mov-cuenta-destino');
+  const avisoSinTarjetas = document.getElementById('aviso-sin-tarjetas');
+  let cuentasDestino = state.cuentas;
+  if(tipoActual === 'PagoTarjeta'){
+    cuentasDestino = state.cuentas.filter(c => c.tipo === 'Tarjeta de crédito');
+  }
+  destino.innerHTML = cuentasDestino.map(c => `<option value="${c.id}">${c.nombre} (${c.moneda||'CRC'})</option>`).join('');
+  avisoSinTarjetas.style.display = (tipoActual === 'PagoTarjeta' && cuentasDestino.length === 0) ? 'block' : 'none';
 }
 
 function actualizarSimboloMontoMov(){
@@ -677,7 +700,7 @@ function actualizarAvisoCambioMoneda(){
   const origen = document.getElementById('mov-cuenta').value;
   const destino = document.getElementById('mov-cuenta-destino').value;
   const aviso = document.getElementById('aviso-cambio-moneda');
-  if(tipoActual === 'Transferencia' && origen && destino && monedaCuenta(origen) !== monedaCuenta(destino)){
+  if((tipoActual === 'Transferencia' || tipoActual === 'PagoTarjeta') && origen && destino && monedaCuenta(origen) !== monedaCuenta(destino)){
     aviso.style.display = 'block';
   } else {
     aviso.style.display = 'none';
@@ -689,12 +712,15 @@ function setTipo(t){
   document.getElementById('btn-tipo-gasto').classList.toggle('active', t === 'Gasto');
   document.getElementById('btn-tipo-ingreso').classList.toggle('active', t === 'Ingreso');
   document.getElementById('btn-tipo-transferencia').classList.toggle('active', t === 'Transferencia');
+  document.getElementById('btn-tipo-pagotarjeta').classList.toggle('active', t === 'PagoTarjeta');
 
-  const esTransferencia = t === 'Transferencia';
-  document.getElementById('grupo-cuenta-destino').style.display = esTransferencia ? 'block' : 'none';
-  document.getElementById('grupo-categoria').style.display = esTransferencia ? 'none' : 'block';
-  document.getElementById('label-cuenta-origen').textContent = esTransferencia ? 'Cuenta origen' : 'Cuenta';
+  const requiereDestino = (t === 'Transferencia' || t === 'PagoTarjeta');
+  document.getElementById('grupo-cuenta-destino').style.display = requiereDestino ? 'block' : 'none';
+  document.getElementById('grupo-categoria').style.display = requiereDestino ? 'none' : 'block';
+  document.getElementById('label-cuenta-origen').textContent = requiereDestino ? 'Cuenta origen' : 'Cuenta';
+  document.getElementById('label-cuenta-destino').textContent = (t === 'PagoTarjeta') ? 'Tarjeta a pagar' : 'Cuenta destino';
 
+  actualizarOpcionesDestino();
   actualizarDatalistCategorias();
   actualizarAvisoCambioMoneda();
 }
@@ -821,27 +847,33 @@ async function guardarMovimiento(){
   const descripcion = document.getElementById('mov-descripcion').value.trim();
   const statusEl = document.getElementById('mov-status');
 
+  const requiereDestino = (tipoActual === 'Transferencia' || tipoActual === 'PagoTarjeta');
+
   if(!monto || monto <= 0 || !cuentaId || !fecha){
     statusEl.innerHTML = '<div class="status-msg error">Completa monto, cuenta y fecha.</div>';
     return;
   }
-  if(tipoActual !== 'Transferencia' && !categoria){
+  if(!requiereDestino && !categoria){
     statusEl.innerHTML = '<div class="status-msg error">Indica una categoría.</div>';
     return;
   }
-  if(tipoActual === 'Transferencia' && (!cuentaDestinoId || cuentaDestinoId === cuentaId)){
+  if(requiereDestino && (!cuentaDestinoId || cuentaDestinoId === cuentaId)){
     statusEl.innerHTML = '<div class="status-msg error">Elige una cuenta destino distinta de la origen.</div>';
     return;
   }
+
+  let categoriaFinal = categoria;
+  if(tipoActual === 'Transferencia') categoriaFinal = 'Transferencia';
+  if(tipoActual === 'PagoTarjeta') categoriaFinal = 'Pago de tarjeta de crédito';
 
   statusEl.innerHTML = '<div class="status-msg">Guardando...</div>';
   try{
     await llamarBackend('addMovimiento', {
       tipo: tipoActual,
-      categoria: tipoActual === 'Transferencia' ? 'Transferencia' : categoria,
+      categoria: categoriaFinal,
       monto, fecha, descripcion,
       cuentaId,
-      cuentaDestinoId: tipoActual === 'Transferencia' ? cuentaDestinoId : '',
+      cuentaDestinoId: requiereDestino ? cuentaDestinoId : '',
       perfil: miPerfil()
     });
     await cargarDatos();
@@ -1111,16 +1143,20 @@ function renderMovimientos(){
   }
   cont.innerHTML = lista.map(m => {
     const esTransferencia = m.tipo === 'Transferencia';
+    const esPagoTarjeta = m.tipo === 'PagoTarjeta';
+    const esMovimientoDoble = esTransferencia || esPagoTarjeta;
     const perfilTxt = m.perfil ? ` · ${m.perfil}` : '';
-    const subtitulo = esTransferencia
-      ? `${nombreCuenta(m.cuentaid)} → ${nombreCuenta(m.cuentadestinoid)}${perfilTxt} · ${m.fecha}`
+    const flecha = esPagoTarjeta ? '→ 💳 ' : '→ ';
+    const subtitulo = esMovimientoDoble
+      ? `${nombreCuenta(m.cuentaid)} ${flecha}${nombreCuenta(m.cuentadestinoid)}${perfilTxt} · ${m.fecha}`
       : `${m.categoria} · ${nombreCuenta(m.cuentaid)}${perfilTxt} · ${m.fecha}`;
-    const claseMonto = esTransferencia ? 'transferencia' : (m.tipo === 'Gasto' ? 'gasto' : 'ingreso');
-    const signo = esTransferencia ? '' : (m.tipo === 'Gasto' ? '-' : '+');
+    const claseMonto = esPagoTarjeta ? 'pagotarjeta' : (esTransferencia ? 'transferencia' : (m.tipo === 'Gasto' ? 'gasto' : 'ingreso'));
+    const signo = esMovimientoDoble ? '' : (m.tipo === 'Gasto' ? '-' : '+');
+    const descripcionDefault = esPagoTarjeta ? 'Pago de tarjeta' : (esTransferencia ? 'Transferencia' : m.categoria);
     return `
     <div class="row">
       <div>
-        <div class="desc">${m.descripcion || (esTransferencia ? 'Transferencia' : m.categoria)}</div>
+        <div class="desc">${m.descripcion || descripcionDefault}</div>
         <div class="cat">${subtitulo}</div>
       </div>
       <div style="display:flex;align-items:center;gap:6px;">
@@ -1165,7 +1201,7 @@ function saldoCuenta(cuentaId, fechaLimite){
     if(fechaLimite && (m.fecha||'') > fechaLimite) return;
     if(m.tipo === 'Ingreso' && m.cuentaid === cuentaId) saldo += Number(m.monto);
     else if(m.tipo === 'Gasto' && m.cuentaid === cuentaId) saldo -= Number(m.monto);
-    else if(m.tipo === 'Transferencia'){
+    else if(m.tipo === 'Transferencia' || m.tipo === 'PagoTarjeta'){
       if(m.cuentaid === cuentaId) saldo -= Number(m.monto);
       if(m.cuentadestinoid === cuentaId){
         saldo += convertirEntreMonedas(Number(m.monto), monedaCuenta(m.cuentaid), cuenta.moneda);
@@ -1392,6 +1428,46 @@ function generarPuntosFlujo(periodo, cuentaId){
   return puntos;
 }
 
+function renderChartPerfil(rango){
+  document.getElementById('titulo-perfil').textContent = 'Ingresos y gastos por perfil (' + etiquetaPeriodo(filtroPeriodoDash) + ')';
+
+  let movs = state.movimientos.filter(m => (m.tipo === 'Gasto' || m.tipo === 'Ingreso') && (m.fecha||'') >= rango.desde && (m.fecha||'') <= rango.hasta);
+  if(filtroCuentaDash !== 'todas') movs = movs.filter(m => m.cuentaid === filtroCuentaDash);
+  // Esta gráfica compara perfiles entre sí, por eso ignora a propósito el filtro de Perfil de arriba.
+
+  const perfiles = Array.from(new Set(movs.map(m => m.perfil && m.perfil.trim() ? m.perfil : 'Sin perfil')));
+  const empty = document.getElementById('perfil-empty');
+  const canvas = document.getElementById('chart-perfil');
+
+  if(perfiles.length === 0){
+    empty.style.display = 'block';
+    canvas.style.display = 'none';
+    return;
+  }
+  empty.style.display = 'none';
+  canvas.style.display = 'block';
+
+  const sumaPorPerfil = (tipo, perfil) => movs
+    .filter(m => m.tipo === tipo && (m.perfil && m.perfil.trim() ? m.perfil : 'Sin perfil') === perfil)
+    .reduce((s,m) => s + convertirAMonedaBase(Number(m.monto), monedaCuenta(m.cuentaid)), 0);
+
+  const ingresos = perfiles.map(p => sumaPorPerfil('Ingreso', p));
+  const gastos = perfiles.map(p => sumaPorPerfil('Gasto', p));
+
+  if(chartPerfil) chartPerfil.destroy();
+  chartPerfil = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: perfiles,
+      datasets: [
+        { label: 'Ingresos', data: ingresos, backgroundColor: '#0f9d84' },
+        { label: 'Gastos', data: gastos, backgroundColor: '#e5484d' }
+      ]
+    },
+    options: { plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } }, scales: { y: { beginAtZero: true } } }
+  });
+}
+
 function renderCharts(){
   const rango = calcularRangoPeriodo(filtroPeriodoDash);
   document.getElementById('titulo-pie').textContent = 'Gastos por categoría (' + etiquetaPeriodo(filtroPeriodoDash) + ')';
@@ -1424,6 +1500,8 @@ function renderCharts(){
       options: { plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } } }
     });
   }
+
+  renderChartPerfil(rango);
 
   const puntosFlujo = generarPuntosFlujo(filtroPeriodoDash, filtroCuentaDash);
   if(chartFlujo) chartFlujo.destroy();
