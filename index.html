@@ -425,13 +425,13 @@
 <div class="modal-overlay" id="modal-presupuesto">
   <div class="modal">
     <button class="close-x" onclick="cerrarModal('modal-presupuesto')">✕</button>
-    <h3>Definir presupuesto</h3>
+    <h3 id="modal-presupuesto-titulo">Definir presupuesto</h3>
     <label>Categoría</label>
     <input type="text" id="pres-categoria" list="lista-categorias-gasto" placeholder="Ej. Alimentación">
     <datalist id="lista-categorias-gasto"></datalist>
     <label>Límite mensual (en tu moneda base)</label>
     <input type="number" id="pres-limite" placeholder="0.00" step="0.01">
-    <button class="btn" onclick="guardarPresupuesto()">Guardar</button>
+    <button class="btn" id="btn-guardar-presupuesto" onclick="guardarPresupuesto()">Guardar</button>
   </div>
 </div>
 
@@ -475,7 +475,7 @@
 <div class="modal-overlay" id="modal-plan">
   <div class="modal">
     <button class="close-x" onclick="cerrarModal('modal-plan')">✕</button>
-    <h3>Nuevo pago programado</h3>
+    <h3 id="modal-plan-titulo">Nuevo pago programado</h3>
 
     <div id="plan-sin-cuentas" style="display:none;">
       <div class="status-msg error">Primero necesitas crear al menos una cuenta.</div>
@@ -526,7 +526,7 @@
       </div>
 
       <div id="plan-status"></div>
-      <button class="btn" onclick="guardarPlanPago()">Guardar plan</button>
+      <button class="btn" id="btn-guardar-plan" onclick="guardarPlanPago()">Guardar plan</button>
     </div>
   </div>
 </div>
@@ -557,6 +557,8 @@ let tipoPlanActual = 'Recurrente';
 let editingCuentaId = null;
 let editingMovimientoId = null;
 let editingCategoriaId = null;
+let editingPresupuestoId = null;
+let editingPlanId = null;
 
 function categoriasPorTipo(tipo){
   return state.categorias.filter(c => c.tipo === tipo).map(c => c.nombre);
@@ -664,9 +666,23 @@ function abrirModalMovimiento(id){
   actualizarSimboloMontoMov();
   abrirModal('modal-movimiento');
 }
-function abrirModalPresupuesto(){
+function abrirModalPresupuesto(id){
+  editingPresupuestoId = id || null;
   const dl = document.getElementById('lista-categorias-gasto');
   dl.innerHTML = categoriasPorTipo('Gasto').map(c => `<option value="${c}">`).join('');
+  if(id){
+    const p = state.presupuestos.find(p => p.id === id);
+    if(!p) return;
+    document.getElementById('pres-categoria').value = p.categoria;
+    document.getElementById('pres-limite').value = p.limite;
+    document.getElementById('modal-presupuesto-titulo').textContent = 'Editar presupuesto';
+    document.getElementById('btn-guardar-presupuesto').textContent = 'Guardar cambios';
+  } else {
+    document.getElementById('pres-categoria').value = '';
+    document.getElementById('pres-limite').value = '';
+    document.getElementById('modal-presupuesto-titulo').textContent = 'Definir presupuesto';
+    document.getElementById('btn-guardar-presupuesto').textContent = 'Guardar';
+  }
   abrirModal('modal-presupuesto');
 }
 
@@ -703,14 +719,9 @@ function actualizarCamposTarjeta(){
   document.getElementById('grupo-cuenta-tarjeta').style.display = esTarjeta ? 'block' : 'none';
 }
 
-function abrirModalPlan(){
+function abrirModalPlan(id){
+  editingPlanId = id || null;
   document.getElementById('plan-status').innerHTML = '';
-  document.getElementById('plan-nombre').value = '';
-  document.getElementById('plan-monto').value = '';
-  document.getElementById('plan-categoria').value = '';
-  document.getElementById('plan-fecha').value = new Date().toISOString().slice(0,10);
-  document.getElementById('plan-fecha-fin').value = '';
-  document.getElementById('plan-numero-cuotas').value = '';
   const opciones = state.cuentas.map(c => `<option value="${c.id}">${c.nombre} (${c.moneda||'CRC'})</option>`).join('');
   document.getElementById('plan-cuenta').innerHTML = opciones;
   document.getElementById('lista-categorias-plan').innerHTML = categoriasPorTipo('Gasto').map(c => `<option value="${c}">`).join('');
@@ -721,7 +732,31 @@ function abrirModalPlan(){
     document.getElementById('plan-sin-cuentas').style.display = 'none';
     document.getElementById('plan-form-wrap').style.display = 'block';
   }
-  setTipoPlan('Recurrente');
+  if(id){
+    const plan = state.planesPago.find(p => p.id === id);
+    if(!plan) return;
+    document.getElementById('plan-nombre').value = plan.nombre;
+    document.getElementById('plan-monto').value = plan.monto;
+    document.getElementById('plan-cuenta').value = plan.cuentaid;
+    document.getElementById('plan-categoria').value = plan.categoria;
+    document.getElementById('plan-fecha').value = plan.fechainicio;
+    document.getElementById('plan-frecuencia').value = plan.frecuencia || 'Mensual';
+    document.getElementById('plan-fecha-fin').value = plan.fechafin || '';
+    document.getElementById('plan-numero-cuotas').value = plan.numerocuotas || '';
+    setTipoPlan(plan.tipo);
+    document.getElementById('modal-plan-titulo').textContent = 'Editar pago programado';
+    document.getElementById('btn-guardar-plan').textContent = 'Guardar cambios';
+  } else {
+    document.getElementById('plan-nombre').value = '';
+    document.getElementById('plan-monto').value = '';
+    document.getElementById('plan-categoria').value = '';
+    document.getElementById('plan-fecha').value = new Date().toISOString().slice(0,10);
+    document.getElementById('plan-fecha-fin').value = '';
+    document.getElementById('plan-numero-cuotas').value = '';
+    setTipoPlan('Recurrente');
+    document.getElementById('modal-plan-titulo').textContent = 'Nuevo pago programado';
+    document.getElementById('btn-guardar-plan').textContent = 'Guardar plan';
+  }
   abrirModal('modal-plan');
 }
 
@@ -962,11 +997,26 @@ async function guardarPresupuesto(){
   const limite = parseFloat(document.getElementById('pres-limite').value);
   if(!categoria || !limite || limite <= 0){ alert('Completa categoría y límite.'); return; }
   try{
-    await llamarBackend('setPresupuesto', { categoria, limite });
+    if(editingPresupuestoId){
+      await llamarBackend('editPresupuesto', { id: editingPresupuestoId, categoria, limite });
+    } else {
+      await llamarBackend('setPresupuesto', { categoria, limite });
+    }
     await cargarDatos();
+    editingPresupuestoId = null;
     document.getElementById('pres-categoria').value = '';
     document.getElementById('pres-limite').value = '';
     cerrarModal('modal-presupuesto');
+  } catch(err){
+    alert('Error: ' + err.message);
+  }
+}
+
+async function eliminarPresupuesto(id){
+  if(!confirm('¿Eliminar este presupuesto?')) return;
+  try{
+    await llamarBackend('deletePresupuesto', { id });
+    await cargarDatos();
   } catch(err){
     alert('Error: ' + err.message);
   }
@@ -1040,15 +1090,22 @@ async function guardarPlanPago(){
 
   statusEl.innerHTML = '<div class="status-msg">Guardando...</div>';
   try{
-    await llamarBackend('addPlanPago', {
+    const payload = {
       nombre, tipo: tipoPlanActual, monto, cuentaId,
       categoria: categoria || 'Pagos programados',
       frecuencia: tipoPlanActual === 'Unico' ? '' : frecuencia,
       fechaInicio,
       fechaFin: tipoPlanActual === 'Recurrente' ? fechaFin : '',
       numeroCuotas: tipoPlanActual === 'Cuotas' ? numeroCuotas : ''
-    });
+    };
+    if(editingPlanId){
+      payload.id = editingPlanId;
+      await llamarBackend('editPlanPago', payload);
+    } else {
+      await llamarBackend('addPlanPago', payload);
+    }
     await cargarDatos();
+    editingPlanId = null;
     cerrarModal('modal-plan');
   } catch(err){
     statusEl.innerHTML = '<div class="status-msg error">Error: ' + err.message + '</div>';
@@ -1319,7 +1376,11 @@ function renderPresupuestos(){
       <div style="margin-bottom:14px;">
         <div class="row" style="border:none;padding:0 0 4px;">
           <span class="desc">${p.categoria}</span>
-          <span class="cat">${fmt(gastado)} / ${fmt(p.limite)}</span>
+          <span class="cat" style="display:flex;align-items:center;gap:8px;">
+            ${fmt(gastado)} / ${fmt(p.limite)}
+            <button class="del" onclick="abrirModalPresupuesto('${p.id}')">✏️</button>
+            <button class="del" onclick="eliminarPresupuesto('${p.id}')">🗑</button>
+          </span>
         </div>
         <div class="progress-bar"><div class="fill ${over ? 'over' : ''}" style="width:${pct}%"></div></div>
       </div>
@@ -1504,7 +1565,10 @@ function renderPagos(){
             <div class="desc">${plan.nombre}</div>
             <div class="cat">${detalle} · ${fmt(plan.monto, monedaCuenta(plan.cuentaid))}</div>
           </div>
-          <button class="del" onclick="eliminarPlan('${plan.id}')">🗑</button>
+          <div style="display:flex;gap:4px;">
+            <button class="del" onclick="abrirModalPlan('${plan.id}')">✏️</button>
+            <button class="del" onclick="eliminarPlan('${plan.id}')">🗑</button>
+          </div>
         </div>
       `;
     }).join('');
