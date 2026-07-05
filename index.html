@@ -2,7 +2,10 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Mis Finanzas</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <style>
@@ -29,15 +32,16 @@
     max-width:480px;
     margin:0 auto;
     min-height:100vh;
+    min-height:100dvh;
     background:var(--bg);
     display:flex;
     flex-direction:column;
-    padding-bottom:76px;
+    padding-bottom:calc(76px + env(safe-area-inset-bottom));
   }
   header{
     background:linear-gradient(135deg,var(--accent),var(--accent-dark));
     color:#fff;
-    padding:22px 20px 26px;
+    padding:calc(22px + env(safe-area-inset-top)) 20px 26px;
     border-radius:0 0 20px 20px;
   }
   header h1{margin:0 0 4px;font-size:18px;font-weight:600;opacity:.9;}
@@ -107,7 +111,7 @@
   nav#bottom-nav button.active{color:var(--accent-dark);}
   nav#bottom-nav .icon{font-size:18px;}
   .fab{
-    position:fixed;bottom:78px;left:50%;transform:translateX(calc(-50% + 0px));
+    position:fixed;bottom:calc(78px + env(safe-area-inset-bottom));left:50%;transform:translateX(calc(-50% + 0px));
     width:56px;height:56px;border-radius:50%;background:var(--accent);color:#fff;
     border:none;font-size:28px;box-shadow:0 4px 12px rgba(15,157,132,.4);cursor:pointer;
     z-index:11;
