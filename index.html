@@ -244,8 +244,8 @@
             <span class="cat" id="resumen-tarjeta-pagado">$0.00</span>
           </div>
           <div class="row" style="border:none;padding:4px 0;">
-            <span class="desc" style="font-weight:600;">Pendiente de este periodo</span>
-            <span class="cat" id="resumen-tarjeta-pendiente" style="font-weight:600;">$0.00</span>
+            <span class="desc" style="font-weight:600;">Saldo Actual</span>
+            <span class="cat" id="resumen-tarjeta-saldo-actual" style="font-weight:600;">$0.00</span>
           </div>
           <div class="progress-bar"><div class="fill" id="resumen-tarjeta-fill" style="width:0%"></div></div>
           <div style="font-size:11px;color:var(--muted);margin-top:6px;">% del periodo ya pagado</div>
@@ -1894,13 +1894,13 @@ function renderTarjetaResumen(){
   const pagado = state.movimientos
     .filter(m => m.tipo === 'PagoTarjeta' && m.cuentadestinoid === tarjeta.id && (m.fecha||'') >= rango.desde && (m.fecha||'') <= rango.hasta)
     .reduce((s,m) => s + convertirEntreMonedas(Number(m.monto), monedaCuenta(m.cuentaid), tarjeta.moneda), 0);
-  const pendiente = Math.max(0, gastado - pagado);
+  const saldoActual = saldoAnterior + gastado - pagado;
   const pct = gastado > 0 ? Math.min(100, (pagado / gastado) * 100) : 0;
 
   document.getElementById('resumen-tarjeta-saldo-anterior').textContent = fmt(saldoAnterior, tarjeta.moneda);
   document.getElementById('resumen-tarjeta-gastado').textContent = fmt(gastado, tarjeta.moneda);
   document.getElementById('resumen-tarjeta-pagado').textContent = fmt(pagado, tarjeta.moneda);
-  document.getElementById('resumen-tarjeta-pendiente').textContent = fmt(pendiente, tarjeta.moneda);
+  document.getElementById('resumen-tarjeta-saldo-actual').textContent = fmt(saldoActual, tarjeta.moneda);
   document.getElementById('resumen-tarjeta-fill').style.width = pct + '%';
 }
 
