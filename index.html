@@ -112,11 +112,12 @@
     z-index:10;
   }
   nav#bottom-nav button{
-    background:none;border:none;color:var(--muted);font-size:10px;
-    display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;padding:4px 4px;
+    background:none;border:none;color:var(--muted);font-size:9px;
+    display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;padding:4px 2px;
+    flex:1 1 0;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
   }
   nav#bottom-nav button.active{color:var(--accent-dark);}
-  nav#bottom-nav .icon{font-size:18px;}
+  nav#bottom-nav .icon{font-size:17px;}
   nav#bottom-nav .icon.girando{animation:girar-icono 0.8s linear infinite;display:inline-block;}
   @keyframes girar-icono{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
   .fab{
@@ -2010,4 +2011,3 @@ window.addEventListener('DOMContentLoaded', () => {
 </script>
 </body>
 </html>
-
