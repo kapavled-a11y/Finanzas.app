@@ -49,7 +49,8 @@
   }
   header h1{margin:0 0 4px;font-size:18px;font-weight:600;opacity:.9;}
   header .balance{font-size:32px;font-weight:700;}
-  header .sub{display:flex;gap:16px;margin-top:10px;font-size:13px;opacity:.9;}
+  header .sub{display:flex;gap:16px;margin-top:10px;font-size:13px;opacity:.9;flex-wrap:wrap;}
+  header .sub #hdr-periodo{width:100%;font-size:11px;opacity:.75;}
   main{flex:1;padding:16px;}
   .card{
     background:var(--card);
@@ -182,8 +183,10 @@
     <h1>Mis Finanzas</h1>
     <div class="balance" id="hdr-balance">$0.00</div>
     <div class="sub">
+      <span id="hdr-periodo"></span>
       <span id="hdr-ingresos">Ingresos: $0</span>
       <span id="hdr-gastos">Gastos: $0</span>
+      <span id="hdr-pagos">Pagos: $0</span>
     </div>
   </header>
 
@@ -315,6 +318,18 @@
         <button class="btn secondary" style="margin-top:8px;" onclick="recargarDatos()">Recargar datos</button>
       </div>
       <div class="card">
+        <h2>Periodo de gastos</h2>
+        <p style="font-size:12px;color:var(--muted);margin-top:0;">
+          Si tus gastos no van del 1 al 31, indica el día en que inicia tu periodo (ej. 29) y la app lo usará
+          en el encabezado, Resumen, Historial y Presupuestos en vez del mes calendario.
+        </p>
+        <label>Día de inicio del periodo (déjalo vacío para usar mes calendario)</label>
+        <input type="number" id="ajuste-periodo-dia" min="1" max="31" step="1" placeholder="Ej. 29">
+        <div id="ajuste-periodo-actual" style="font-size:11px;color:var(--muted);margin:-6px 0 12px;"></div>
+        <div id="ajuste-periodo-status"></div>
+        <button class="btn secondary" onclick="guardarConfigPeriodo()">Guardar periodo</button>
+      </div>
+      <div class="card">
         <h2>Moneda</h2>
         <label>Moneda base (para totales y gráficos)</label>
         <select id="ajuste-moneda-base">
@@ -436,7 +451,7 @@
     <input type="number" id="pres-limite" placeholder="0.00" step="0.01">
     <label>Periodo</label>
     <select id="pres-cuenta">
-      <option value="">Mes calendario (día 1 al último)</option>
+      <option value="">Periodo por defecto (mes calendario o el de Ajustes)</option>
     </select>
     <button class="btn" id="btn-guardar-presupuesto" onclick="guardarPresupuesto()">Guardar</button>
   </div>
@@ -681,7 +696,7 @@ function abrirModalPresupuesto(id){
   dl.innerHTML = categoriasPorTipo('Gasto').map(c => `<option value="${c}">`).join('');
   const cuentasConCorte = state.cuentas.filter(c => c.diacorte);
   const selCuenta = document.getElementById('pres-cuenta');
-  selCuenta.innerHTML = '<option value="">Mes calendario (día 1 al último)</option>' +
+  selCuenta.innerHTML = '<option value="">Periodo por defecto (mes calendario o el de Ajustes)</option>' +
     cuentasConCorte.map(c => `<option value="${c.id}">Periodo de ${c.nombre} (corte día ${c.diacorte})</option>`).join('');
   if(id){
     const p = state.presupuestos.find(p => p.id === id);
@@ -1250,7 +1265,33 @@ async function cargarDatos(){
   document.getElementById('ajuste-bccr-correo').value = state.configuracion.bccrcorreo || '';
   document.getElementById('ajuste-bccr-token').value = state.configuracion.bccrtoken || '';
   document.getElementById('ajuste-perfil').value = miPerfil();
+  document.getElementById('ajuste-periodo-dia').value = state.configuracion.periododiainicio || '';
+  actualizarEtiquetaPeriodoAjustes();
   render();
+}
+
+function actualizarEtiquetaPeriodoAjustes(){
+  const dia = state.configuracion && state.configuracion.periododiainicio;
+  const el = document.getElementById('ajuste-periodo-actual');
+  if(dia){
+    const p = calcularPeriodoDesdeInicio(dia);
+    el.textContent = p ? ('Periodo actual: ' + fechaCorta(p.desde) + ' - ' + fechaCorta(p.hasta)) : '';
+  } else {
+    el.textContent = 'Usando mes calendario (día 1 al último).';
+  }
+}
+
+async function guardarConfigPeriodo(){
+  const dia = document.getElementById('ajuste-periodo-dia').value;
+  const statusEl = document.getElementById('ajuste-periodo-status');
+  statusEl.innerHTML = '<div class="status-msg">Guardando...</div>';
+  try{
+    await llamarBackend('setConfiguracion', { clave: 'PeriodoDiaInicio', valor: dia ? parseInt(dia,10) : '' });
+    await cargarDatos();
+    statusEl.innerHTML = '<div class="status-msg">Guardado.</div>';
+  } catch(err){
+    statusEl.innerHTML = '<div class="status-msg error">Error: ' + err.message + '</div>';
+  }
 }
 
 function mesActualStr(){ return new Date().toISOString().slice(0,7); }
@@ -1276,9 +1317,7 @@ function calcularRangoPeriodo(periodo, cuentaId){
       if(periodoCorte) return periodoCorte;
     }
   }
-  const desde = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
-  const hasta = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0);
-  return { desde: iso(desde), hasta: iso(hasta) };
+  return obtenerPeriodoPorDefecto();
 }
 
 function etiquetaPeriodo(p, cuentaId){
@@ -1290,6 +1329,10 @@ function etiquetaPeriodo(p, cuentaId){
       const r = calcularPeriodoCorte(cuenta.diacorte);
       if(r) return `periodo ${fechaCorta(r.desde)} - ${fechaCorta(r.hasta)}`;
     }
+  }
+  if(state.configuracion && state.configuracion.periododiainicio){
+    const r = calcularPeriodoDesdeInicio(state.configuracion.periododiainicio);
+    if(r) return `periodo ${fechaCorta(r.desde)} - ${fechaCorta(r.hasta)}`;
   }
   return 'este mes';
 }
@@ -1340,13 +1383,24 @@ function setFiltroPeriodoHist(p){
 }
 
 function renderHeader(){
-  const mes = mesActualStr();
-  const delMes = state.movimientos.filter(m => (m.fecha || '').slice(0,7) === mes);
-  const ingresos = delMes.filter(m => m.tipo === 'Ingreso').reduce((s,m) => s + convertirAMonedaBase(Number(m.monto), monedaCuenta(m.cuentaid)), 0);
-  const gastos = delMes.filter(m => m.tipo === 'Gasto').reduce((s,m) => s + convertirAMonedaBase(Number(m.monto), monedaCuenta(m.cuentaid)), 0);
+  const rango = obtenerPeriodoPorDefecto();
+  const delPeriodo = state.movimientos.filter(m => (m.fecha || '') >= rango.desde && (m.fecha || '') <= rango.hasta);
+  const suma = tipo => delPeriodo.filter(m => m.tipo === tipo).reduce((s,m) => s + convertirAMonedaBase(Number(m.monto), monedaCuenta(m.cuentaid)), 0);
+  const ingresos = suma('Ingreso');
+  const gastos = suma('Gasto');
+  const pagos = suma('PagoTarjeta');
   document.getElementById('hdr-balance').textContent = fmt(ingresos - gastos);
   document.getElementById('hdr-ingresos').textContent = 'Ingresos: ' + fmt(ingresos);
   document.getElementById('hdr-gastos').textContent = 'Gastos: ' + fmt(gastos);
+  document.getElementById('hdr-pagos').textContent = 'Pagos: ' + fmt(pagos);
+  const elPeriodo = document.getElementById('hdr-periodo');
+  if(state.configuracion && state.configuracion.periododiainicio){
+    elPeriodo.textContent = `Periodo: ${fechaCorta(rango.desde)} - ${fechaCorta(rango.hasta)}`;
+    elPeriodo.style.display = 'block';
+  } else {
+    elPeriodo.textContent = '';
+    elPeriodo.style.display = 'none';
+  }
 }
 
 function nombreCuenta(id){
@@ -1405,15 +1459,15 @@ function renderMovimientos(){
 
 function renderPresupuestos(){
   const cont = document.getElementById('lista-presupuestos');
-  const mesCalendario = { desde: mesActualStr() + '-01', hasta: mesActualStr() + '-31' };
+  const periodoPorDefecto = obtenerPeriodoPorDefecto();
   if(state.presupuestos.length === 0){
     cont.innerHTML = '<div class="empty">Aún no has definido presupuestos.</div>';
     return;
   }
   cont.innerHTML = state.presupuestos.map(p => {
     const cuentaRef = p.cuentaid ? state.cuentas.find(c => c.id === p.cuentaid) : null;
-    const rango = (cuentaRef && cuentaRef.diacorte) ? calcularPeriodoCorte(cuentaRef.diacorte) : mesCalendario;
-    const etiquetaRango = cuentaRef ? `${fechaCorta(rango.desde)} - ${fechaCorta(rango.hasta)}` : 'mes calendario';
+    const rango = (cuentaRef && cuentaRef.diacorte) ? calcularPeriodoCorte(cuentaRef.diacorte) : periodoPorDefecto;
+    const etiquetaRango = `${fechaCorta(rango.desde)} - ${fechaCorta(rango.hasta)}`;
     const gastado = state.movimientos
       .filter(m => m.tipo === 'Gasto' && m.categoria === p.categoria && (m.fecha||'') >= rango.desde && (m.fecha||'') <= rango.hasta)
       .reduce((s,m) => s + convertirAMonedaBase(Number(m.monto), monedaCuenta(m.cuentaid)), 0);
@@ -1484,6 +1538,36 @@ function calcularPeriodoCorte(diaCorte){
   }
   const inicio = new Date(fin.getFullYear(), fin.getMonth() - 1, d + 1);
   return { desde: iso(inicio), hasta: iso(fin) };
+}
+
+// Igual que calcularPeriodoCorte, pero a partir del DÍA DE INICIO configurado
+// por el usuario en Ajustes (ej. inicio día 29 -> periodo del 29 al 28).
+function calcularPeriodoDesdeInicio(diaInicio){
+  const d = parseInt(diaInicio, 10);
+  if(!d) return null;
+  const hoy = new Date();
+  const iso = fecha => fecha.toISOString().slice(0,10);
+  let inicio = new Date(hoy.getFullYear(), hoy.getMonth(), d);
+  if(hoy.getDate() < d){
+    inicio = new Date(hoy.getFullYear(), hoy.getMonth() - 1, d);
+  }
+  const fin = new Date(inicio.getFullYear(), inicio.getMonth() + 1, d - 1);
+  return { desde: iso(inicio), hasta: iso(fin) };
+}
+
+// Periodo a usar cuando no hay una cuenta específica con día de corte propio:
+// usa el periodo global configurado en Ajustes si existe, si no, el mes calendario.
+function obtenerPeriodoPorDefecto(){
+  const diaGlobal = state.configuracion && state.configuracion.periododiainicio;
+  if(diaGlobal){
+    const p = calcularPeriodoDesdeInicio(diaGlobal);
+    if(p) return p;
+  }
+  const hoy = new Date();
+  const iso = fecha => fecha.toISOString().slice(0,10);
+  const desde = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+  const hasta = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0);
+  return { desde: iso(desde), hasta: iso(hasta) };
 }
 
 function renderCuentas(){
