@@ -222,6 +222,29 @@
         <select id="filtro-perfil-dash" onchange="filtroPerfilDash=this.value; renderCharts();"></select>
       </div>
       <div class="card">
+        <h2>Tarjeta de crédito</h2>
+        <div id="resumen-tarjeta-empty" class="empty" style="display:none;">Aún no tienes tarjetas de crédito registradas.</div>
+        <div id="resumen-tarjeta-content">
+          <label>Elige tarjeta</label>
+          <select id="resumen-tarjeta-select" onchange="filtroTarjetaResumen=this.value; renderTarjetaResumen();"></select>
+          <div id="resumen-tarjeta-periodo" style="font-size:11px;color:var(--muted);margin:-6px 0 12px;"></div>
+          <div class="row" style="border:none;padding:4px 0;">
+            <span class="desc">Gastado en el periodo</span>
+            <span class="cat" id="resumen-tarjeta-gastado">$0.00</span>
+          </div>
+          <div class="row" style="border:none;padding:4px 0;">
+            <span class="desc">Pagado en el periodo</span>
+            <span class="cat" id="resumen-tarjeta-pagado">$0.00</span>
+          </div>
+          <div class="row" style="border:none;padding:4px 0;">
+            <span class="desc" style="font-weight:600;">Por pagar al cierre</span>
+            <span class="cat" id="resumen-tarjeta-pendiente" style="font-weight:600;">$0.00</span>
+          </div>
+          <div class="progress-bar"><div class="fill" id="resumen-tarjeta-fill" style="width:0%"></div></div>
+          <div style="font-size:11px;color:var(--muted);margin-top:6px;">% del periodo ya pagado</div>
+        </div>
+      </div>
+      <div class="card">
         <h2 id="titulo-pie">Gastos por categoría</h2>
         <canvas id="chart-pie" height="220"></canvas>
         <div class="empty" id="pie-empty" style="display:none;">No hay gastos en este periodo.</div>
@@ -590,6 +613,7 @@ let chartPie = null, chartBar = null, chartFlujo = null, chartPerfil = null;
 let filtroPeriodoDash = 'Mes';
 let filtroCuentaDash = 'todas';
 let filtroPerfilDash = 'todos';
+let filtroTarjetaResumen = '';
 let filtroPeriodoHist = 'Todo';
 let filtroCuentaHist = 'todas';
 let filtroPerfilHist = 'todos';
@@ -1812,7 +1836,47 @@ function renderChartPerfil(rango){
   });
 }
 
+function renderTarjetaResumen(){
+  const tarjetas = state.cuentas.filter(c => c.tipo === 'Tarjeta de crédito');
+  const cont = document.getElementById('resumen-tarjeta-content');
+  const empty = document.getElementById('resumen-tarjeta-empty');
+  const sel = document.getElementById('resumen-tarjeta-select');
+
+  if(tarjetas.length === 0){
+    cont.style.display = 'none';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+  cont.style.display = 'block';
+
+  if(!filtroTarjetaResumen || !tarjetas.some(c => c.id === filtroTarjetaResumen)){
+    filtroTarjetaResumen = tarjetas[0].id;
+  }
+  sel.innerHTML = tarjetas.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('');
+  sel.value = filtroTarjetaResumen;
+
+  const tarjeta = tarjetas.find(c => c.id === filtroTarjetaResumen);
+  const rango = tarjeta.diacorte ? calcularPeriodoCorte(tarjeta.diacorte) : obtenerPeriodoPorDefecto();
+  document.getElementById('resumen-tarjeta-periodo').textContent = `Periodo: ${fechaCorta(rango.desde)} - ${fechaCorta(rango.hasta)}`;
+
+  const gastado = state.movimientos
+    .filter(m => m.tipo === 'Gasto' && m.cuentaid === tarjeta.id && (m.fecha||'') >= rango.desde && (m.fecha||'') <= rango.hasta)
+    .reduce((s,m) => s + Number(m.monto), 0);
+  const pagado = state.movimientos
+    .filter(m => m.tipo === 'PagoTarjeta' && m.cuentadestinoid === tarjeta.id && (m.fecha||'') >= rango.desde && (m.fecha||'') <= rango.hasta)
+    .reduce((s,m) => s + convertirEntreMonedas(Number(m.monto), monedaCuenta(m.cuentaid), tarjeta.moneda), 0);
+  const pendiente = Math.max(0, gastado - pagado);
+  const pct = gastado > 0 ? Math.min(100, (pagado / gastado) * 100) : 0;
+
+  document.getElementById('resumen-tarjeta-gastado').textContent = fmt(gastado, tarjeta.moneda);
+  document.getElementById('resumen-tarjeta-pagado').textContent = fmt(pagado, tarjeta.moneda);
+  document.getElementById('resumen-tarjeta-pendiente').textContent = fmt(pendiente, tarjeta.moneda);
+  document.getElementById('resumen-tarjeta-fill').style.width = pct + '%';
+}
+
 function renderCharts(){
+  renderTarjetaResumen();
   const rango = calcularRangoPeriodo(filtroPeriodoDash, filtroCuentaDash);
   document.getElementById('titulo-pie').textContent = 'Gastos por categoría (' + etiquetaPeriodo(filtroPeriodoDash, filtroCuentaDash) + ')';
 
