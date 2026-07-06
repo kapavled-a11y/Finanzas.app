@@ -117,6 +117,8 @@
   }
   nav#bottom-nav button.active{color:var(--accent-dark);}
   nav#bottom-nav .icon{font-size:18px;}
+  nav#bottom-nav .icon.girando{animation:girar-icono 0.8s linear infinite;display:inline-block;}
+  @keyframes girar-icono{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
   .fab{
     position:fixed;bottom:calc(78px + env(safe-area-inset-bottom));left:50%;transform:translateX(calc(-50% + 0px));
     width:56px;height:56px;border-radius:50%;background:var(--accent);color:#fff;
@@ -408,6 +410,7 @@
     <button data-view="movimientos"><span class="icon">📋</span>Historial</button>
     <button data-view="cuentas"><span class="icon">🏦</span>Cuentas</button>
     <button data-view="planificar"><span class="icon">🗓️</span>Planificar</button>
+    <button id="btn-actualizar-nav" onclick="actualizarTodosLosDatos()"><span class="icon" id="icon-actualizar-nav">🔄</span>Actualizar</button>
     <button data-view="ajustes"><span class="icon">⚙️</span>Ajustes</button>
   </nav>
 
@@ -635,9 +638,25 @@ function cambiarSubvista(nombre){
   document.getElementById('sub-' + nombre).classList.add('active');
 }
 
-document.querySelectorAll('#bottom-nav button').forEach(btn => {
+document.querySelectorAll('#bottom-nav button[data-view]').forEach(btn => {
   btn.addEventListener('click', () => cambiarVista(btn.dataset.view));
 });
+
+async function actualizarTodosLosDatos(){
+  const btn = document.getElementById('btn-actualizar-nav');
+  const icon = document.getElementById('icon-actualizar-nav');
+  if(btn.disabled) return;
+  btn.disabled = true;
+  icon.classList.add('girando');
+  try{
+    await cargarDatos();
+  } catch(err){
+    alert('No se pudo actualizar: ' + err.message);
+  } finally {
+    icon.classList.remove('girando');
+    btn.disabled = false;
+  }
+}
 
 function cerrarModal(id){ document.getElementById(id).classList.remove('active'); }
 function abrirModal(id){ document.getElementById(id).classList.add('active'); }
@@ -1991,3 +2010,4 @@ window.addEventListener('DOMContentLoaded', () => {
 </script>
 </body>
 </html>
+
