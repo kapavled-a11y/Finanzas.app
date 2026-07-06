@@ -232,6 +232,10 @@
           <select id="resumen-tarjeta-select" onchange="filtroTarjetaResumen=this.value; renderTarjetaResumen();"></select>
           <div id="resumen-tarjeta-periodo" style="font-size:11px;color:var(--muted);margin:-6px 0 12px;"></div>
           <div class="row" style="border:none;padding:4px 0;">
+            <span class="desc">Saldo anterior</span>
+            <span class="cat" id="resumen-tarjeta-saldo-anterior">$0.00</span>
+          </div>
+          <div class="row" style="border:none;padding:4px 0;">
             <span class="desc">Gastado en el periodo</span>
             <span class="cat" id="resumen-tarjeta-gastado">$0.00</span>
           </div>
@@ -240,7 +244,7 @@
             <span class="cat" id="resumen-tarjeta-pagado">$0.00</span>
           </div>
           <div class="row" style="border:none;padding:4px 0;">
-            <span class="desc" style="font-weight:600;">Por pagar al cierre</span>
+            <span class="desc" style="font-weight:600;">Pendiente de este periodo</span>
             <span class="cat" id="resumen-tarjeta-pendiente" style="font-weight:600;">$0.00</span>
           </div>
           <div class="progress-bar"><div class="fill" id="resumen-tarjeta-fill" style="width:0%"></div></div>
@@ -1880,6 +1884,10 @@ function renderTarjetaResumen(){
   const rango = tarjeta.diacorte ? calcularPeriodoCorte(tarjeta.diacorte) : obtenerPeriodoPorDefecto();
   document.getElementById('resumen-tarjeta-periodo').textContent = `Periodo: ${fechaCorta(rango.desde)} - ${fechaCorta(rango.hasta)}`;
 
+  const diaAntesInicio = new Date(rango.desde + 'T00:00:00');
+  diaAntesInicio.setDate(diaAntesInicio.getDate() - 1);
+  const saldoAnterior = -saldoCuenta(tarjeta.id, diaAntesInicio.toISOString().slice(0,10));
+
   const gastado = state.movimientos
     .filter(m => m.tipo === 'Gasto' && m.cuentaid === tarjeta.id && (m.fecha||'') >= rango.desde && (m.fecha||'') <= rango.hasta)
     .reduce((s,m) => s + Number(m.monto), 0);
@@ -1889,6 +1897,7 @@ function renderTarjetaResumen(){
   const pendiente = Math.max(0, gastado - pagado);
   const pct = gastado > 0 ? Math.min(100, (pagado / gastado) * 100) : 0;
 
+  document.getElementById('resumen-tarjeta-saldo-anterior').textContent = fmt(saldoAnterior, tarjeta.moneda);
   document.getElementById('resumen-tarjeta-gastado').textContent = fmt(gastado, tarjeta.moneda);
   document.getElementById('resumen-tarjeta-pagado').textContent = fmt(pagado, tarjeta.moneda);
   document.getElementById('resumen-tarjeta-pendiente').textContent = fmt(pendiente, tarjeta.moneda);
